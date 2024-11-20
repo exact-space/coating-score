@@ -190,7 +190,7 @@ pipeline {
             steps {
                 script {
                     catchError(buildResult: 'SUCCESS', stageResult: 'FAILURE') {
-                        def revertStatus = deploy("https://eiv8zsdaktab.share.zrok.io/deployservice/cicd/${service_type}/revert/$APP_NAME", 'UTCL_revert')
+                        def revertStatus = deploy("https://utcl.exactspace.co/deployservice/cicd/${service_type}/revert/$APP_NAME", 'UTCL_revert')
                         revertStatus.name = 'UTCL_revert'
                         deploymentStatus['UTCL_revert'] = revertStatus ?: [result: 'FAILURE', message: 'Deployment failed']
                         deploymentStatusList << revertStatus
