@@ -523,7 +523,7 @@ def Kiln_Coating_Score():
             on='time',
             how='left'  
         )
-
+        df = df.sort_values(by='time', ascending=True)
         # print(df_temp['time'].tail(1))
         # print(df_process['time'].tail(1))
         # print(df_quality['time'].tail(1))
