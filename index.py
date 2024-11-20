@@ -565,6 +565,8 @@ def job():
     print(f"Running coating score calculation at {datetime.now()}...")
     Kiln_Coating_Score()
 
+job()
+
 while True:
     now = datetime.now()
     next_run = (now + timedelta(hours=1)).replace(minute=5, second=0, microsecond=0)
