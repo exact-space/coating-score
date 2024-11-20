@@ -113,7 +113,7 @@ pipeline {
             steps {
                 script {
                     catchError(buildResult: 'SUCCESS', stageResult: 'FAILURE') {
-                        def initialStatus = deploy("https://eiv8zsdaktab.share.zrok.io/deployservice/cicd/${service_type}/$APP_NAME", 'UTCL_latest')
+                        def initialStatus = deploy(" https://utcl.exactspace.co/deployservice/cicd/${service_type}/$APP_NAME", 'UTCL_latest')
                         initialStatus.name = 'UTCL_latest'
                         deploymentStatus['UTCL_latest'] = initialStatus ?: [result: 'FAILURE', message: 'Deployment failed']
                         deploymentStatusList << initialStatus
