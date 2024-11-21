@@ -65,8 +65,13 @@ def get_data(tag):
             df = pd.DataFrame()
             return df
     except Exception as e:
-        print(e)
-        print(time.time())
+        if 'SDCW2_QCX_KN_LSF' in tag:
+            name = 'Quality'
+        elif 'SDCW2_KN_KILNTEMP00M_05M' in tag:
+            name = 'Shell Temp'
+        else:
+            name = 'Process'
+        print(e,'in get_data',name)
         df = pd.DataFrame()
         return df
 
@@ -77,7 +82,7 @@ def postData(tag,time,val,topic_line):
     body=[{"name":tag,"datapoints":[[epoch_time,val]], "tags" : {"type":"simulation"}}]
     
     postBody = [{'t':float(epoch_time),'v':float(val)}]
-    print(postBody)
+    # print(postBody)
     print(topic_line+tag+"/r",postBody)
     client.publish(topic_line+tag+"/r",json.dumps(postBody))
     
@@ -510,7 +515,7 @@ def Kiln_Coating_Score():
             on='time',
             how='outer'
         )
-
+        merged_temp_process = merged_temp_process.sort_values(by='time', ascending=True)
         # Drop rows where both columns are NaN
         merged_temp_process = merged_temp_process.dropna(
             subset=['final_coating_score_temp_smoothed', 'final_coating_score_process_smoothed'],
@@ -521,7 +526,7 @@ def Kiln_Coating_Score():
         df = merged_temp_process.merge(
             df_quality[['time', 'final_coating_score_quality_smoothed']],
             on='time',
-            how='left'  
+            how='outer'  
         )
         df = df.sort_values(by='time', ascending=True)
         # print(df_temp['time'].tail(1))
