@@ -81,10 +81,10 @@ def postData(tag,time,val,topic_line):
     # epoch_time = 1731907910000
     body=[{"name":tag,"datapoints":[[epoch_time,val]], "tags" : {"type":"simulation"}}]
     
-    postBody = [{'t':float(epoch_time),'v':float(val)}]
-    # print(postBody)
-    print(topic_line+tag+"/r",postBody)
-    client.publish(topic_line+tag+"/r",json.dumps(postBody))
+    #postBody = [{'t':float(epoch_time),'v':float(val)}]
+    print(body)
+    #print(topic_line+tag+"/r",postBody)
+    #client.publish(topic_line+tag+"/r",json.dumps(postBody))
     
     qr.postDataPacket(body)
 
@@ -451,7 +451,7 @@ def Kiln_Coating_Score():
     try:
         unitId = '65ae141fd0928341551f8695'
         flow_tag = 'SDCW2_KN_Kiln Feed Act'
-        coating_score_tag = 'SDCW2_Kiln_Coating_Score'
+        coating_score_tag, shell_temp_score_tag, process_score_tag, quality_score_tag = 'SDCW2_Kiln_Coating_Score', 'SDCW2_Kiln_Coating_Score_Shell_Temp', 'SDCW2_Kiln_Coating_Score_Process', 'SDCW2_Kiln_Coating_Score_Quality'
         temp_tags = ['SDCW2_KN_KILNTEMP00M_05M','SDCW2_KN_KILNTEMP06M_07M','SDCW2_KN_KILNTEMP09-5M_11M','SDCW2_KN_KILNTEMP12M_14M','SDCW2_KN_KILNTEMP18M_19-5M','SDCW2_KN_KILNTEMP21-5M_23M','SDCW2_KN_KILNTEMP23M_24-5M','SDCW2_KN_KILNTEMP28M_30M','SDCW2_KN_KILNTEMP30M_32M','SDCW2_KN_KILNTEMP36M_38M','SDCW2_KN_KILNTEMP38M_40M']
         process_tags = ['SDCW2_KN_462KL01_PT01', 'SDCW2_KN_Press_Cl_ID_RPM_Calc_30_rollingMean', 'SDCW2_CL_472FNB_ST01', 'SDCW2_KN_462GA1_AT01', 'SDCW2_KN_Kiln Feed Act', 'SDCW2_Kiln_Coal_Ratio', 'SDCW2_KN_L2_TOTAL_COAL_TPH','SDCW2_KN_442FN1_VFD_ST01']
         #process_columns = ['Kiln Inlet Pressure', 'Cooler id rpm','Kiln Inlet CO','Kiln Total Feed','Kiln Coal Ratio','Total coal consumption']
@@ -535,16 +535,28 @@ def Kiln_Coating_Score():
         # print(df.tail(1)) 
         if df is not None and not df.empty:
             df['combined_score'] = df.apply(calculate_combined_score, axis=1)
-            combined_score = df.iloc[-1]['combined_score']
-            time = df.iloc[-1]['time']
+            last_row = df.iloc[-1]
+            time = last_row['time']
+            combined_score = last_row['combined_score']
+            shell_temp_score = last_row['final_coating_score_temp_smoothed']
+            process_score = last_row['final_coating_score_process_smoothed']
+            quality_score = last_row['final_coating_score_quality_smoothed']
 
+            topic_line = "u/"+unitId+"/"
             if not np.isnan(combined_score) :
-                topic_line = "u/"+unitId+"/"
                 postData(coating_score_tag,time,round(combined_score,2),topic_line)
                 
                 #publish_mqtt()
             else:
                 print('NaN',time)
+            if not np.isnan(shell_temp_score) :
+                postData(shell_temp_score_tag,time,round(shell_temp_score,2),topic_line)
+            if not np.isnan(process_score) :
+                postData(process_score_tag,time,round(process_score,2),topic_line)
+            if not np.isnan(quality_score) :
+                postData(quality_score_tag,time,round(quality_score,2),topic_line)
+                        
+                
         else:
             print('df is empty')    
         
