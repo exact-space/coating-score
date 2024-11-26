@@ -53,7 +53,7 @@ if not BROKER_ADDRESS:
 def get_data(tag):
     qr = ts.timeseriesquery()
     qr.addMetrics(tag)
-    qr.chooseTimeType("relative",{"start_value":4, "start_unit":"weeks"}) #  30 mins,15 datapoints
+    qr.chooseTimeType("relative",{"start_value":3, "start_unit":"weeks"}) #  30 mins,15 datapoints
     qr.submitQuery()
     qr.formatResultAsDF()
     try:
