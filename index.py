@@ -5,7 +5,7 @@ from datetime import datetime,date,timedelta
 import pandas as pd
 import traceback
 import matplotlib.pyplot as plt
-import plotly.express as px
+#import plotly.express as px
 import numpy as np
 import warnings
 import seaborn as sns
