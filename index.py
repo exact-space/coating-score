@@ -5,7 +5,7 @@ from datetime import datetime,date,timedelta
 import pandas as pd
 import traceback
 import matplotlib.pyplot as plt
-# import plotly.express as px
+import plotly.express as px
 import numpy as np
 import warnings
 import seaborn as sns
@@ -83,12 +83,12 @@ def get_data(tag, num_of_weeks):
         df = pd.DataFrame()
         return df
 
-def postData(tag,time,val,topic_line):
+def postData(tag,time,val):
     rounded_hour = time.replace(minute=0, second=0, microsecond=0)
     epoch_time = int(rounded_hour.timestamp() * 1000)
     # epoch_time = 1731907910000
     body=[{"name":tag,"datapoints":[[epoch_time,val]], "tags" : {"type":"simulation"}}]
-    print(body)
+    #print(body)
     #postBody = [{'t':float(epoch_time),'v':float(val)}]
     #print(postBody)
     #print(topic_line+tag+"/r",postBody)
@@ -273,14 +273,8 @@ def calculate_temp_score(temp_tags, flow_tag):
         #     else: #if more than 6 coating scores are positive
         #         return pd.Series({'value': sum(positive_scores) / len(ideal_temp_min), 'abnormalities_shell_temp': positive_abnormalities})
         #         #return sum(positive_scores) / len(ideal_temp_min)
-    for _ in range(3): 
-        try:
-            df_temp = get_data([flow_tag] + temp_tags, num_of_weeks=3)
-            break  
-        except:
-            time.sleep(1)  
-    else:
-        df_temp = None 
+       
+    df_temp = get_data([flow_tag]+temp_tags, num_of_weeks=3)
     #print(df_temp.tail(1))
     if df_temp is not None and not df_temp.empty:
         df_temp['time'] = pd.to_datetime(df_temp['time']/1000, unit="s")
@@ -361,14 +355,7 @@ def calculate_process_score(process_tags):
         return pd.Series({'score': score, 'abnormalities_process': abnormalities})
         #return score
 
-    for _ in range(3):  
-        try:
-            df_process = get_data(process_tags, num_of_weeks=3)
-            break  
-        except:
-            time.sleep(1)  
-    else:
-        df_process = None 
+    df_process = get_data(process_tags, num_of_weeks=3)
 
     if df_process is not None and not df_process.empty:
         df_process = df_process.rename(columns=tagMapper_rolling)
@@ -451,14 +438,7 @@ def calculate_coating_risk_quality(quality_tags):
 
         return pd.Series({'score': total_std_score, 'std_quality': std_dict})
 
-    for _ in range(3):  
-        try:
-            df_quality = get_data(quality_tags, num_of_weeks=5)
-            break  
-        except:
-            time.sleep(1)  
-    else:
-        df_quality = None 
+    df_quality = get_data(quality_tags, num_of_weeks=75)
 
     if df_quality is not None and not df_quality.empty:
         df_quality['time'] = pd.to_datetime(df_quality['time']/1000, unit="s")
@@ -616,6 +596,8 @@ weights = {
 ideal_process_max = {'Kiln Main Drive Current': 418.22, 'Kiln Inlet Pressure': -55.21,'Kiln Coal Ratio': 0.372,'Cooler id rpm': 709.60}
 
 
+import pytz
+
 def generate_and_post_task_body(last_row, case_num):
     def serialize_task_template(obj):
         if isinstance(obj, dict):
@@ -660,7 +642,7 @@ def generate_and_post_task_body(last_row, case_num):
 
           "type": "title",
 
-          "value": "Excess Coating in Kiln (Testing)"
+          "value": "Excess Coating in Kiln"
 
         },
 
@@ -717,7 +699,7 @@ def generate_and_post_task_body(last_row, case_num):
 
           "type": "title",
 
-          "value": "Less Refractory Coating in Kiln (Testing)"
+          "value": "Less Refractory Coating in Kiln"
 
         },
 
@@ -744,21 +726,23 @@ def generate_and_post_task_body(last_row, case_num):
 
     excess_coating = []
     less_refractory = []
-    activity_url = "http://10.13.1.75/exactapi" + "/activities"
+    activity_url = "http://10.13.1.75/exactapi/activities"
     localized_time = last_row['time'].replace(tzinfo=pytz.UTC).astimezone(pytz.timezone('Asia/Kolkata')).strftime('%Y-%m-%dT%H:%M:%S.000Z')
+    image_path = "kiln_shell_temperature_pattern_"+str(localized_time)+".png"
+    size = os.path.getsize(image_path)
 
     for col in temp_tags:
         column_name = col + ' Coating Score'
         percentage = last_row[column_name]
         area = col  
 
-        if percentage < 0:
+        if percentage < -2:
             less_refractory.append({
                 "Time": last_row['time'],
                 "Area": area[17:],
                 "Excess Percentage": f"{round(abs(percentage),1)}%"  # Convert to positive for display
             })
-        elif percentage > 0:
+        elif percentage > 2:
             excess_coating.append({
                 "Time": last_row['time'],
                 "Area": area[17:],
@@ -776,13 +760,21 @@ def generate_and_post_task_body(last_row, case_num):
             "type": "table",
             "value": [
                 ["Time", "Area", "Excess Percentage"]
-            ] + [[row["Time"], row["Area"], row["Excess Percentage"]] for row in excess_coating]  # Adding dynamic rows
+            ] + [[localized_time[:16].replace('T',' '), row["Area"], row["Excess Percentage"]] for row in excess_coating]  
         }
+        excess_task_template["attachments"] = [
+      {
+        "file_name": image_path,
+        "size": size,
+        "type": "image/png"
+      }
+    ]
+
         excess_task_template["content"].append(excess_body)
         excess_task_template = serialize_task_template(excess_task_template)
 
         excess_task_template = json.dumps(excess_task_template, indent=4)
-        #print(excess_task_template)
+        # print(excess_task_template)
         
 
     # If less refractory coating is found
@@ -795,18 +787,26 @@ def generate_and_post_task_body(last_row, case_num):
             "type": "table",
             "value": [
                 ["Time", "Area", "Less Refractory Percentage"]
-            ] + [[row["Time"], row["Area"], row["Excess Percentage"]] for row in less_refractory]  # Adding dynamic rows here
+            ] + [[localized_time[:16].replace('T',' '), row["Area"], row["Excess Percentage"]] for row in less_refractory]  # Adding dynamic rows here
         }
+        less_task_template["attachments"] = [
+      {
+        "file_name": image_path,
+        "size": size,
+        "type": "image/png"
+      }
+    ]
         less_task_template["content"].append(less_body)
         less_task_template = serialize_task_template(less_task_template)
 
         less_task_template = json.dumps(less_task_template, indent=4)
-        #print(less_task_template)
        
     
     def publish_task(template):
-        activity_response = requests.post(activity_url, json=template)
-        print(f"Task Posted: {activity_response.status_code}")
+        print(activity_url)
+        activity_response = requests.post(activity_url, json=json.loads(template))
+        print(f"Body Posted: {activity_response.status_code}")
+        #print(template)
 
     if case_num == 4:
         publish_task(excess_task_template)
@@ -816,14 +816,15 @@ def generate_and_post_task_body(last_row, case_num):
     elif case_num == 2:
         publish_task(excess_task_template)
     else:
-        print('no case')
+        print('yoyo no case')
         
+
 
 def generate_temp_pattern(last_row):
 
     x = [tag[17:] for tag in temp_tags]
     y = last_row[temp_tags].values
-
+    localized_time = last_row['time'].replace(tzinfo=pytz.UTC).astimezone(pytz.timezone('Asia/Kolkata')).strftime('%Y-%m-%dT%H:%M:%S.000Z')
     plt.figure(figsize=(12, 5))
     sns.set_theme(style="whitegrid")
 
@@ -832,7 +833,7 @@ def generate_temp_pattern(last_row):
     for i, value in enumerate(y):
         plt.text( x[i], value + 2, f"{value:.1f}", ha="center", fontsize=10, color="black",)
 
-    plt.title( f"Kiln Shell Temperature Pattern at {last_row['time']}", fontsize=16, weight="bold", pad=15,)
+    plt.title( f"Kiln Shell Temperature Pattern at {localized_time[:16].replace('T',' ')}", fontsize=16, weight="bold", pad=15,)
     plt.xlabel("Kiln Shell Sections", fontsize=14)
     plt.ylabel("Temperature (°C)", fontsize=14)
     plt.xticks(rotation=20, fontsize=12)
@@ -840,12 +841,16 @@ def generate_temp_pattern(last_row):
     plt.legend(fontsize=12)
     plt.tight_layout()
 
-    output_path = "kiln_shell_temperature_pattern.png"
+    output_path = "kiln_shell_temperature_pattern_"+str(localized_time)+".png"
     plt.savefig(output_path, dpi=300, bbox_inches="tight")
 
-    plt.show()
+    # plt.show()
     print(f"Plot saved as {output_path}")
 
+    files = {'upload_file': open(str(output_path),'rb')}
+    url="http://10.13.1.75/exactapi/attachments/tasks/upload/"
+    response = requests.post(url, files=files)
+    print(response)
 
 def Kiln_Coating_Score():
     try:
@@ -895,7 +900,7 @@ def Kiln_Coating_Score():
             
         else:
             df_temp = pd.DataFrame(columns=['time','final_coating_score_temp_smoothed'])
-        
+         
         
         if df_process is not None and not df_process.empty:
             # For process score
@@ -998,8 +1003,8 @@ def Kiln_Coating_Score():
                 
                 if case_num != 1:
                     last_row_temp = df_temp.iloc[-1]
-                    #generate_and_post_task_body(last_row_temp, case_num) 
-                    #generate_temp_pattern(last_row_temp)
+                    generate_temp_pattern(last_row_temp)
+                    generate_and_post_task_body(last_row_temp, case_num) 
                 #return df, df_temp, df_process
 
                 if not np.isnan(combined_score) :
@@ -1063,25 +1068,7 @@ def Kiln_Coating_Risk():
 
 # start_date = datetime.strptime("17-11-2024 00:00", "%d-%m-%Y %H:%M")
 # end_date = datetime.strptime("10-12-2024 20:00", "%d-%m-%Y %H:%M")
-
-#Kiln_Coating_Score()
+Kiln_Coating_Score()
 # start_date = datetime.strptime("30-06-2023 00:00", "%d-%m-%Y %H:%M")
 # end_date = datetime.strptime("04-12-2024 20:00", "%d-%m-%Y %H:%M")
-#Kiln_Coating_Risk()
-def job():
-    print(f"Running coating score calculation at {datetime.now()}...")
-    Kiln_Coating_Score()
-
-job()
-
-while True:
-    now = datetime.now()
-    next_run = (now + timedelta(hours=1)).replace(minute=5, second=0, microsecond=0)
-    if now.minute < 5: 
-        next_run = now.replace(minute=5, second=0, microsecond=0)
-    
-    wait_time = (next_run - now).total_seconds()
-    
-    time.sleep(wait_time)
-    
-    job()
+# Kiln_Coating_Risk()
