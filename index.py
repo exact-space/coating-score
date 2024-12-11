@@ -1068,7 +1068,25 @@ def Kiln_Coating_Risk():
 
 # start_date = datetime.strptime("17-11-2024 00:00", "%d-%m-%Y %H:%M")
 # end_date = datetime.strptime("10-12-2024 20:00", "%d-%m-%Y %H:%M")
-Kiln_Coating_Score()
+#Kiln_Coating_Score()
 # start_date = datetime.strptime("30-06-2023 00:00", "%d-%m-%Y %H:%M")
 # end_date = datetime.strptime("04-12-2024 20:00", "%d-%m-%Y %H:%M")
 # Kiln_Coating_Risk()
+
+def job():
+    print(f"Running coating score calculation at {datetime.now()}...")
+    Kiln_Coating_Score()
+
+job()
+
+while True:
+    now = datetime.now()
+    next_run = (now + timedelta(hours=1)).replace(minute=5, second=0, microsecond=0)
+    if now.minute < 5: 
+        next_run = now.replace(minute=5, second=0, microsecond=0)
+    
+    wait_time = (next_run - now).total_seconds()
+    
+    time.sleep(wait_time)
+    
+    job()
