@@ -596,8 +596,6 @@ weights = {
 ideal_process_max = {'Kiln Main Drive Current': 418.22, 'Kiln Inlet Pressure': -55.21,'Kiln Coal Ratio': 0.372,'Cooler id rpm': 709.60}
 
 
-import pytz
-
 def generate_and_post_task_body(last_row, case_num):
     def serialize_task_template(obj):
         if isinstance(obj, dict):
@@ -730,19 +728,23 @@ def generate_and_post_task_body(last_row, case_num):
     localized_time = last_row['time'].replace(tzinfo=pytz.UTC).astimezone(pytz.timezone('Asia/Kolkata')).strftime('%Y-%m-%dT%H:%M:%S.000Z')
     image_path = "kiln_shell_temperature_pattern_"+str(localized_time)+".png"
     size = os.path.getsize(image_path)
-
+    less_priority, excess_priority = "medium","medium"
     for col in temp_tags:
         column_name = col + ' Coating Score'
         percentage = last_row[column_name]
         area = col  
 
         if percentage < -2:
+            if percentage <= -40:
+                less_priority = "high"
             less_refractory.append({
                 "Time": last_row['time'],
                 "Area": area[17:],
                 "Excess Percentage": f"{round(abs(percentage),1)}%"  # Convert to positive for display
             })
         elif percentage > 2:
+            if percentage >= 40:
+                excess_priority = "high"
             excess_coating.append({
                 "Time": last_row['time'],
                 "Area": area[17:],
@@ -755,7 +757,7 @@ def generate_and_post_task_body(last_row, case_num):
         excess_body = excess_task_template["content"]
         excess_task_template["lastUpdatedOn"] = localized_time
         excess_task_template["updateHistory"][0]["on"] = localized_time
-        
+        excess_task_template["taskPriority"] = excess_priority
         excess_body = {
             "type": "table",
             "value": [
@@ -783,6 +785,7 @@ def generate_and_post_task_body(last_row, case_num):
         less_task_template["createdOn"] = localized_time
         less_task_template["lastUpdatedOn"] = localized_time
         less_task_template["updateHistory"][0]["on"] = localized_time
+        less_task_template["taskPriority"] = less_priority
         less_body={
             "type": "table",
             "value": [
@@ -806,7 +809,7 @@ def generate_and_post_task_body(last_row, case_num):
         print(activity_url)
         activity_response = requests.post(activity_url, json=json.loads(template))
         print(f"Body Posted: {activity_response.status_code}")
-        #print(template)
+        # print(template)
 
     if case_num == 4:
         publish_task(excess_task_template)
@@ -817,7 +820,6 @@ def generate_and_post_task_body(last_row, case_num):
         publish_task(excess_task_template)
     else:
         print('yoyo no case')
-        
 
 
 def generate_temp_pattern(last_row):
