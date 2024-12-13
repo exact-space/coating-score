@@ -56,7 +56,8 @@ temp_tags = ['SDCW2_KN_KILNTEMP00M_05M','SDCW2_KN_KILNTEMP06M_07M','SDCW2_KN_KIL
 process_tags = ['SDCW2_KN_462KL01_PT01', 'SDCW2_CL_472FNB_ST01', 'SDCW2_KN_462GA1_AT01', 'SDCW2_KN_Kiln Feed Act', 'SDCW2_Kiln_Coal_Ratio', 'SDCW2_KN_L2_TOTAL_COAL_TPH','SDCW2_KN_442FN1_VFD_ST01']   
 #process_columns = ['Kiln Inlet Pressure', 'Cooler id rpm','Kiln Inlet CO','Kiln Total Feed','Kiln Coal Ratio','Total coal consumption']
 quality_tags = ['SDCW2_QCX_KN_LSF','SDCW2_QCX_KN_R_90micron','SDCW2_QCX_CLK_Liquid','SDCW2_QCX_CLK_CaO','SDCW2_QCX_CLK_Al2O3','SDCW2_QCX_HM_Na2O','SDCW2_QCX_HM_LOI-KF','SDCW2_QCX_Coatability_Index_Calc','SDCW2_QCX_Hydraulic_Ratio_Calc','SDCW2_QCX_KN_AM','SDCW2_QCX_KN_SM','SDCW2_QCX_CLK_C3S','SDCW2_QCX_CLK_C2S','SDCW2_QCX_KM_ASH']
-
+fall_tags = ['SDCW2_KN_Kiln Feed Act','SDCW2_CL_472CR1_IT03','SDCW2_CL_492SL1_WT01','SDCW2_KN_462MD1U01_IT01','SDCW2_Coating_Risk_Quality']
+coating_fall_tag = "SDCW2_Kiln_Coating_Fall"
 
 def get_data(tag, num_of_weeks):
     qr = ts.timeseriesquery()
@@ -88,7 +89,7 @@ def postData(tag,time,val):
     epoch_time = int(rounded_hour.timestamp() * 1000)
     # epoch_time = 1731907910000
     body=[{"name":tag,"datapoints":[[epoch_time,val]], "tags" : {"type":"simulation"}}]
-    #print(body)
+    print(body)
     #postBody = [{'t':float(epoch_time),'v':float(val)}]
     #print(postBody)
     #print(topic_line+tag+"/r",postBody)
@@ -157,7 +158,46 @@ def save_abnormalities_to_csv(df, csv_path, time_column, score_column, abnormali
 
     combined_data.to_csv(csv_path, index=False)
 
+def determine_resample_offset(df):
+    try:
+        quality_times = df[df['SDCW2_Coating_Risk_Quality'].notna()].index
+        if not quality_times.empty:
+            if any(quality_times.minute == 30):
+                return pd.Timestamp(quality_times[0].replace(minute=30, second=0, microsecond=0))
+            else:
+                return pd.Timestamp(quality_times[0].replace(minute=0, second=0, microsecond=0))
+    except:
+        return pd.Timestamp(df.index[0].replace(minute=0, second=0, microsecond=0))
 
+def calculate_coating_fall_score(row):
+    score = 0
+    score += row['SDCW2_CL_472CR1_IT03'] * 0.8  
+    score += row['SDCW2_CL_492SL1_WT01'] * 0.3 
+    
+    if row['main_drive_diff'] > 100:
+        score += row['main_drive_diff'] * 0.2  
+    if 'SDCW2_Coating_Risk_Quality' in row.index:
+        if row['SDCW2_Coating_Risk_Quality'] >= 5:
+            score += row['SDCW2_Coating_Risk_Quality'] * 4
+        elif row['SDCW2_Coating_Risk_Quality'] >= 3:
+            score += row['SDCW2_Coating_Risk_Quality'] * 2
+    
+    score *= 0.2
+    if score < 4:
+        score = None
+    return score
+
+def calculate_diff_with_fallback(index, column):
+    for step in range(0, 3):  # Maximum 3 steps back
+        if index - 2 - step * 2 >= 0:  # Ensure we stay within bounds
+            current_set = df.loc[index - step * 2: index - step * 2 + 1, column].values
+            previous_set = df.loc[index - step * 2 - 2: index - step * 2 - 1, column].values
+            
+            # Check if both sets are valid (no NaN in the set)
+            if not np.any(np.isnan(current_set)) and not np.any(np.isnan(previous_set)):
+                return abs(current_set.mean() - previous_set.mean())
+    return np.nan  # If no valid sets are found, return NaN
+    
 
 def calculate_temp_score(temp_tags, flow_tag):
     
@@ -809,7 +849,7 @@ def generate_and_post_task_body(last_row, case_num):
         print(activity_url)
         activity_response = requests.post(activity_url, json=json.loads(template))
         print(f"Body Posted: {activity_response.status_code}")
-        # print(template)
+        #print(template)
 
     if case_num == 4:
         publish_task(excess_task_template)
@@ -823,7 +863,6 @@ def generate_and_post_task_body(last_row, case_num):
 
 
 def generate_temp_pattern(last_row):
-
     x = [tag[17:] for tag in temp_tags]
     y = last_row[temp_tags].values
     localized_time = last_row['time'].replace(tzinfo=pytz.UTC).astimezone(pytz.timezone('Asia/Kolkata')).strftime('%Y-%m-%dT%H:%M:%S.000Z')
@@ -854,6 +893,62 @@ def generate_temp_pattern(last_row):
     response = requests.post(url, files=files)
     print(response)
 
+def kiln_coating_fall():
+    df = get_data(fall_tags, num_of_weeks=1)
+    df['time'] = pd.to_datetime(df['time']/1000, unit="s")
+
+    if df.shape[1] >= len(fall_tags):
+        df.set_index('time',inplace=True)
+
+        if 'SDCW2_Coating_Risk_Quality' in df.columns:
+            daily_avg = df['SDCW2_Coating_Risk_Quality'].resample('D').mean()
+            df['SDCW2_Coating_Risk_Quality'] = (df['SDCW2_Coating_Risk_Quality'].groupby(df.index.date).transform('mean')  
+            )
+        df.reset_index(inplace=True)
+        df = df.sort_values(by='time')
+        df['time_diff'] = (df['time'] - df['time'].shift()).dt.total_seconds() / 60
+        # df['main_drive_diff'] = df['SDCW2_KN_462MD1U01_IT01'].diff().abs()
+        # df['main_drive_diff'] = np.where(df['time_diff'] == 1, df['main_drive_diff'], np.nan)
+        df['main_drive_diff'] = [ calculate_diff_with_fallback(i, 'SDCW2_KN_462MD1U01_IT01') if df.loc[i, 'time_diff'] == 1 else np.nan for i in range(len(df))]
+        # df['crusher_diff'] = df['SDCW2_CL_472CR1_IT03'].diff().abs()
+        # df['crusher_diff'] = np.where(df['time_diff'] == 1, df['crusher_diff'], np.nan)
+        df = df.drop(columns=['time_diff'])
+        df = df[df['SDCW2_KN_Kiln Feed Act']>100]
+        std_columns = ['SDCW2_CL_472CR1_IT03', 'SDCW2_CL_492SL1_WT01'] #clk crusher and dbc weight tph
+        df.set_index('time', inplace=True)
+        std_resampled = df[std_columns].resample('10T').std()
+        mean_resampled = df.drop(columns=std_columns).resample('10T').mean()
+        df = pd.concat([std_resampled, mean_resampled], axis=1)
+        df.reset_index(inplace=True)
+
+        df = df[
+        (df['SDCW2_CL_472CR1_IT03'] > 13) ^
+        (df['SDCW2_CL_492SL1_WT01'] > 35) ^
+        (df['main_drive_diff']> 100)]
+
+        df['time'] = pd.to_datetime(df['time'])
+        df.set_index('time', inplace=True)
+
+        resampled_dataframes = []
+
+        for date, daily_df in df.groupby(df.index.date):
+            offset = determine_resample_offset(daily_df)
+            daily_resampled = daily_df.resample('1H', origin=offset).mean()
+            resampled_dataframes.append(daily_resampled)
+
+        df = pd.concat(resampled_dataframes)
+
+        df.reset_index(inplace=True)
+        df = df.dropna(how='all', subset=df.columns.difference(['time']))
+        df['coating_fall_score'] = df.apply(calculate_coating_fall_score, axis=1)
+        
+        if df is not None and not df.empty:
+            last_row = df.iloc[-1]
+            time = last_row['time']
+            fall_score = last_row['coating_fall_score']
+            if not np.isnan(fall_score):
+                postData(coating_fall_tag, time, round(fall_score, 2))
+                
 def Kiln_Coating_Score():
     try:
         df_temp = calculate_temp_score(temp_tags, flow_tag)
@@ -1005,8 +1100,8 @@ def Kiln_Coating_Score():
                 
                 if case_num != 1:
                     last_row_temp = df_temp.iloc[-1]
-                    generate_temp_pattern(last_row_temp)
-                    generate_and_post_task_body(last_row_temp, case_num) 
+                    #generate_temp_pattern(last_row_temp)
+                    #generate_and_post_task_body(last_row_temp, case_num) 
                 #return df, df_temp, df_process
 
                 if not np.isnan(combined_score) :
@@ -1074,10 +1169,12 @@ def Kiln_Coating_Risk():
 # start_date = datetime.strptime("30-06-2023 00:00", "%d-%m-%Y %H:%M")
 # end_date = datetime.strptime("04-12-2024 20:00", "%d-%m-%Y %H:%M")
 # Kiln_Coating_Risk()
-
+# Kiln_Coating_Score()
+# kiln_coating_fall()
 def job():
     print(f"Running coating score calculation at {datetime.now()}...")
     Kiln_Coating_Score()
+    kiln_coating_fall()
 
 job()
 
