@@ -187,7 +187,7 @@ def calculate_coating_fall_score(row):
         score = None
     return score
 
-def calculate_diff_with_fallback(index, column):
+def calculate_diff_with_fallback(index, column, df):
     for step in range(0, 3):  # Maximum 3 steps back
         if index - 2 - step * 2 >= 0:  # Ensure we stay within bounds
             current_set = df.loc[index - step * 2: index - step * 2 + 1, column].values
@@ -909,7 +909,7 @@ def kiln_coating_fall():
         df['time_diff'] = (df['time'] - df['time'].shift()).dt.total_seconds() / 60
         # df['main_drive_diff'] = df['SDCW2_KN_462MD1U01_IT01'].diff().abs()
         # df['main_drive_diff'] = np.where(df['time_diff'] == 1, df['main_drive_diff'], np.nan)
-        df['main_drive_diff'] = [ calculate_diff_with_fallback(i, 'SDCW2_KN_462MD1U01_IT01') if df.loc[i, 'time_diff'] == 1 else np.nan for i in range(len(df))]
+        df['main_drive_diff'] = [calculate_diff_with_fallback(i, 'SDCW2_KN_462MD1U01_IT01', df) if df.loc[i, 'time_diff'] == 1 else np.nanfor i in range(len(df))]       
         # df['crusher_diff'] = df['SDCW2_CL_472CR1_IT03'].diff().abs()
         # df['crusher_diff'] = np.where(df['time_diff'] == 1, df['crusher_diff'], np.nan)
         df = df.drop(columns=['time_diff'])
