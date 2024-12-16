@@ -807,7 +807,7 @@ def generate_and_post_task_body(last_row, case_num):
                         #print(excess_response['content'])
                         excess_task_template = excess_response.copy()
 
-            except e as Exception:
+            except Exception as e:
                 print(e,'error in task table delete')
                 excess_update = False
         #print(excess_task_template['content'])
