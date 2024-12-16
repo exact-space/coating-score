@@ -840,7 +840,7 @@ def generate_and_post_task_body(last_row, case_num):
                     if content['type']=='table':
                         less_response['content'].pop(less_response['content'].index(content))
                         less_task_template = less_response.copy()
-            except e as Exception:
+            except Exception as e:
                 print(e,'error in task table delete')
                 less_update = False
         #print(less_response)
