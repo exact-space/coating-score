@@ -10,6 +10,7 @@ import numpy as np
 import warnings
 import seaborn as sns
 import pytz
+import urllib.parse
 warnings.filterwarnings("ignore")
 
 
@@ -319,6 +320,7 @@ def calculate_temp_score(temp_tags, flow_tag):
     if df_temp is not None and not df_temp.empty:
         df_temp['time'] = pd.to_datetime(df_temp['time']/1000, unit="s")
         # Filter data based on 'Kiln Total Feed'
+        print('Kiln Feed :', df_temp.iloc[-1][flow_tag])
         df_temp = df_temp[(df_temp[flow_tag] >= FEED_THRESHOLD)]
 
         
@@ -680,7 +682,7 @@ def generate_and_post_task_body(last_row, case_num):
 
           "type": "title",
 
-          "value": "Excess Coating in Kiln"
+          "value": "Coating issue in Kiln"
 
         },
 
@@ -702,69 +704,53 @@ def generate_and_post_task_body(last_row, case_num):
         "viewedUsers": [],
         "mentions": [],
         "systems": [],
-        "completedBy": "Somasundaram S"
+        "completedBy": "Pulse"
     }
-    less_task_template = {
-        "type": "task",
-        "voteAcceptCount": 0,
-        "voteRejectCount": 0,
-        "acceptedUserList": [],
-        "rejectedUserList": [],
-        "assignee": "Shift-A",
-        "source": "Kiln Coating Module",
-        "team": "Operations",
-        "createdBy": "60599de3a382f577ef0e38c1",
-        "createdOn": "2024-12-07T20:46:29.000Z",
-        "siteId": "65ae141fd0928341551f8695",
-        "dataTagId" : "SDCW2_Kiln_Less_Coating_Score",
-        "subTaskOf": None,
-        "subTasks": [],
-        "chats": [],
-        "chatOf": None,
-        "taskPriority": "medium",
-        "updateHistory": [
-            {
-                "action": "Pulse created this task",
-                "by": "60599de3a382f577ef0e38c1",
-                "on": "2024-12-07T20:46:29.000Z"
-            }
-        ],
-        "unitsId": "65ae141fd0928341551f8695",
-        "collaborators": ["60599de3a382f577ef0e38c1"],
-        "equipmentIds": [],
-        "status": "inprogress",
-        "content": [{
+    less_task_template = excess_task_template.copy()
 
-          "type": "title",
+    base_url = "http://10.13.1.75"
+    #base_url = "http://sandbox.exactspace.co"
 
-          "value": "Less Refractory Coating in Kiln"
+    filter_dict = {"where": {"source": "Kiln Coating Module","unitsId": unitId}}
+    filter_json = json.dumps(filter_dict)
+    encoded_filter = urllib.parse.quote(filter_json)
 
-        },
+    url = f"{base_url}/exactapi//activities?filter={encoded_filter}"
+    response = json.loads(requests.get(url).content)
 
-        {
+    res_dict = {}
+    for i in response:
+        if 'dataTagId' in i.keys() and i['status'].lower() != 'done' and (i['dataTagId']=='SDCW2_Kiln_Excess_Coating_Score' or i['dataTagId']=='SDCW2_Kiln_Less_Coating_Score'):
+            res_dict[i['createdOn']] = [i['id'],i['dataTagId']]
 
-          "type": "boldtext",
-
-          "value": "KPI"
-
-    }],
-        "taskGeneratedBy": "Pulse 2",
-        "incidentId": "",
-        "category": "",
-        "sourceURL": "",
-        "notifyEmailIds": ["somasundaram.s@exactspace.co"],
-        "lastUpdatedOn": "2024-12-07T20:49:47.531Z",
-        "chat": [],
-        "taskDescription": "&lt;p&gt;Kiln got coating issues&lt;/p&gt;",
-        "viewedUsers": [],
-        "mentions": [],
-        "systems": [],
-        "completedBy": "Somasundaram S"
-    }
+    less_id, excess_id = '',''
+    coat_tags = ['SDCW2_Kiln_Excess_Coating_Score','SDCW2_Kiln_Less_Coating_Score']
+    if len(res_dict) > 0:
+        res_dict = sorted(res_dict.items())
+        res_dict = res_dict[::-1]
+        
+        for i in res_dict:
+            tag = i[1][1]
+            if tag in coat_tags:
+                if tag == "SDCW2_Kiln_Excess_Coating_Score":
+                    excess_id = i[1][0]
+                    coat_tags.remove('SDCW2_Kiln_Excess_Coating_Score')
+                elif tag == "SDCW2_Kiln_Less_Coating_Score":
+                    less_id = i[1][0]
+                    coat_tags.remove('SDCW2_Kiln_Less_Coating_Score')
+            if len(coat_tags) == 0:
+                break
+    prev_excess_coated = {}
+    prev_less_coated = {}
+    current_excess_coating = {}
+    current_less_coating ={}
+    excess_update = False
+    less_update = False
 
     excess_coating = []
     less_refractory = []
-    activity_url = "http://10.13.1.75/exactapi/activities"
+    activity_url = "http://10.13.1.75/exactapi/activities/"
+    #activity_url = "http://sandbox.exactspace.co/exactapi/activities"
     localized_time = last_row['time'].replace(tzinfo=pytz.UTC).astimezone(pytz.timezone('Asia/Kolkata')).strftime('%Y-%m-%dT%H:%M:%S.000Z')
     image_path = "kiln_shell_temperature_pattern_"+str(localized_time)+".png"
     size = os.path.getsize(image_path)
@@ -777,6 +763,7 @@ def generate_and_post_task_body(last_row, case_num):
         if percentage < -2:
             if percentage <= -40:
                 less_priority = "high"
+            current_less_coating[area[17:]] = round(abs(percentage),1)
             less_refractory.append({
                 "Time": last_row['time'],
                 "Area": area[17:],
@@ -785,19 +772,87 @@ def generate_and_post_task_body(last_row, case_num):
         elif percentage > 2:
             if percentage >= 40:
                 excess_priority = "high"
+            current_excess_coating[area[17:]] = round(abs(percentage),1)
             excess_coating.append({
                 "Time": last_row['time'],
                 "Area": area[17:],
                 "Excess Percentage": f"{round(percentage,1)}%"  # Positive percentages
             })
-    
-    
+
+    if excess_id != '':
+        excess_response = json.loads(requests.get(base_url+'/exactapi/activities/'+excess_id).content)
+        for dicti in excess_response['content']:
+            if dicti['type']=='table':
+                for section in dicti['value'][1:]:
+                    prev_excess_coated[section[1]] = float(section[-1][:-1])
+        if set(prev_excess_coated.keys()).issubset(current_excess_coating.keys()):
+            #current_excess_coating = {'06M_07M': 3.7, '23M_24-5M': 42, '36M_38M': 10.9}
+            for key in prev_excess_coated:
+                if current_excess_coating[key] >= 0.5 * prev_excess_coated[key]: #no channge or added section, so update
+                    excess_update = True
+                else:
+                    excess_update = False 
+                    break
+        if excess_update ==False:#there is a change in values, update == false
+            excess_response['status'] = "done"
+            print('updated done')
+            res = requests.put(activity_url+excess_id, json=excess_response)
+            print(activity_url+excess_response['id'])
+            
+        else: #no change so deleting existing table
+            try:
+                for content in excess_response['content']:
+                    if content['type']=='table':
+                        excess_response['content'].pop(excess_response['content'].index(content))
+                        #print(excess_response['content'])
+                        excess_task_template = excess_response.copy()
+
+            except e as Exception:
+                print(e,'error in task table delete')
+                excess_update = False
+        #print(excess_task_template['content'])
+        #print(excess_response)
+
+
+    if less_id != '':
+        less_response = json.loads(requests.get(base_url+'/exactapi/activities/'+less_id).content)
+        for dicti in less_response['content']:
+            if dicti['type']=='table':
+                for section in dicti['value'][1:]:
+                    prev_excess_coated[section[1]] = float(section[-1][:-1])
+        if set(prev_less_coated.keys()).issubset(current_less_coating.keys()):
+            for key in prev_less_coated:
+                if current_less_coating[key] >= 0.5 * prev_less_coated[key]: #no channge in values, so update
+                    less_update = True
+                else:
+                    less_update = False 
+                    break
+
+        if less_update ==False:#there is a change in values, update == false
+            less_response['status'] = "done"
+            res = requests.put(activity_url+less_id, json=json.loads(less_response))
+            print(res.status_code)
+            print(activity_url+less_response['id'])
+            
+        else: #no change so deleting existing table
+            try:
+                for content in less_response['content']:
+                    if content['type']=='table':
+                        less_response['content'].pop(less_response['content'].index(content))
+                        less_task_template = less_response.copy()
+            except e as Exception:
+                print(e,'error in task table delete')
+                less_update = False
+        #print(less_response)
     if excess_coating:
+
         excess_task_template["createdOn"] = localized_time
         excess_body = excess_task_template["content"]
         excess_task_template["lastUpdatedOn"] = localized_time
         excess_task_template["updateHistory"][0]["on"] = localized_time
         excess_task_template["taskPriority"] = excess_priority
+        excess_task_template["dataTagId"] = "SDCW2_Kiln_Excess_Coating_Score"
+        excess_task_template["content"][0]["value"] = "Excess Coating in Kiln"
         excess_body = {
             "type": "table",
             "value": [
@@ -826,6 +881,8 @@ def generate_and_post_task_body(last_row, case_num):
         less_task_template["lastUpdatedOn"] = localized_time
         less_task_template["updateHistory"][0]["on"] = localized_time
         less_task_template["taskPriority"] = less_priority
+        less_task_template["dataTagId"] = "SDCW2_Kiln_Less_Coating_Score"
+        less_task_template["content"][0]["value"] = "Less Coating in Kiln"
         less_body={
             "type": "table",
             "value": [
@@ -843,21 +900,29 @@ def generate_and_post_task_body(last_row, case_num):
         less_task_template = serialize_task_template(less_task_template)
 
         less_task_template = json.dumps(less_task_template, indent=4)
-       
     
-    def publish_task(template):
-        print(activity_url)
-        activity_response = requests.post(activity_url, json=json.loads(template))
-        print(f"Body Posted: {activity_response.status_code}")
-        #print(template)
+    
+    def publish_task(template, update_flag):
+        template = json.loads(template)
+        if update_flag:
+            #print(type(template), template)
+            activity_response = requests.put(activity_url+template['id'], json=template)
+            print(activity_url+template['id'])
+            print(f"Body Updated: {activity_response.status_code}")
+        else:
+            #print(update_flag, template)
+            activity_response = requests.post(activity_url, json=template)
+            print(f"Body Posted: {activity_response.status_code}")
+        #activity_response = requests.post(activity_url, json=json.loads(template))
+        #print(f"Body Posted: {activity_response.status_code}")
 
     if case_num == 4:
-        publish_task(excess_task_template)
-        publish_task(less_task_template)
+        publish_task(excess_task_template, excess_update)
+        publish_task(less_task_template, less_update)
     elif case_num == 3:
-        publish_task(less_task_template)
+        publish_task(less_task_template, less_update)
     elif case_num == 2:
-        publish_task(excess_task_template)
+        publish_task(excess_task_template, excess_update)
     else:
         print('yoyo no case')
 
@@ -941,13 +1006,16 @@ def kiln_coating_fall():
         df.reset_index(inplace=True)
         df = df.dropna(how='all', subset=df.columns.difference(['time']))
         df['coating_fall_score'] = df.apply(calculate_coating_fall_score, axis=1)
-        
+        print(df.tail())
         if df is not None and not df.empty:
             last_row = df.iloc[-1]
             time = last_row['time']
             fall_score = last_row['coating_fall_score']
             if not np.isnan(fall_score):
                 postData(coating_fall_tag, time, round(fall_score, 2))
+            print('nan score, no major coating fall')
+        else:
+            print('coating fall df none/ empty/ no fall for a week')
                 
 def Kiln_Coating_Score():
     try:
@@ -1170,7 +1238,7 @@ def Kiln_Coating_Risk():
 # end_date = datetime.strptime("04-12-2024 20:00", "%d-%m-%Y %H:%M")
 # Kiln_Coating_Risk()
 # Kiln_Coating_Score()
-# kiln_coating_fall()
+#kiln_coating_fall()
 def job():
     print(f"Running coating score calculation at {datetime.now()}...")
     Kiln_Coating_Score()
