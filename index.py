@@ -830,7 +830,7 @@ def generate_and_post_task_body(last_row, case_num):
 
         if less_update ==False:#there is a change in values, update == false
             less_response['status'] = "done"
-            res = requests.put(activity_url+less_id, json=json.loads(less_response))
+            res = requests.put(activity_url+less_id, json=less_response)
             print(res.status_code)
             print(activity_url+less_response['id'])
             
