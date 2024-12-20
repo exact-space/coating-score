@@ -1168,8 +1168,8 @@ def Kiln_Coating_Score():
                 
                 if case_num != 1:
                     last_row_temp = df_temp.iloc[-1]
-                    generate_temp_pattern(last_row_temp)
-                    generate_and_post_task_body(last_row_temp, case_num) 
+                    #generate_temp_pattern(last_row_temp)
+                    #generate_and_post_task_body(last_row_temp, case_num) 
                 #return df, df_temp, df_process
 
                 if not np.isnan(combined_score) :
