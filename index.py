@@ -1011,7 +1011,7 @@ def kiln_coating_fall():
             last_row = df.iloc[-1]
             time = last_row['time']
             fall_score = last_row['coating_fall_score']
-            if not np.isnan(fall_score):
+            if fall_score is not None and not np.isnan(fall_score):
                 postData(coating_fall_tag, time, round(fall_score, 2))
             print('nan score, no major coating fall')
         else:
