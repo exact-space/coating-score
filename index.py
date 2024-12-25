@@ -51,7 +51,7 @@ if not BROKER_ADDRESS:
 unitId = '65ae141fd0928341551f8695'
 flow_tag = 'SDCW2_KN_Kiln Feed Act'
 FEED_THRESHOLD = 300
-coating_score_tag, shell_temp_score_tag, process_score_tag, quality_score_tag = 'SDCW2_Kiln_Coating_Score', 'SDCW2_Kiln_Coating_Score_Shell_Temp', 'SDCW2_Kiln_Coating_Score_Process', 'SDCW2_Kiln_Coating_Score_Quality'
+coating_score_tag, shell_temp_score_tag, process_score_tag, quality_score_tag, coating_risk_tag = 'SDCW2_Kiln_Coating_Score', 'SDCW2_Kiln_Coating_Score_Shell_Temp', 'SDCW2_Kiln_Coating_Score_Process', 'SDCW2_Kiln_Coating_Score_Quality', 'SDCW2_Kiln_Coating_Risk'
 excess_temp_score_tag, less_temp_score_tag = 'SDCW2_Kiln_Excess_Coating_Score', 'SDCW2_Kiln_Less_Coating_Score'
 temp_tags = ['SDCW2_KN_KILNTEMP00M_05M','SDCW2_KN_KILNTEMP06M_07M','SDCW2_KN_KILNTEMP09-5M_11M','SDCW2_KN_KILNTEMP12M_14M','SDCW2_KN_KILNTEMP18M_19-5M','SDCW2_KN_KILNTEMP21-5M_23M','SDCW2_KN_KILNTEMP23M_24-5M','SDCW2_KN_KILNTEMP28M_30M','SDCW2_KN_KILNTEMP30M_32M','SDCW2_KN_KILNTEMP36M_38M','SDCW2_KN_KILNTEMP38M_40M']
 process_tags = ['SDCW2_KN_462KL01_PT01', 'SDCW2_CL_472FNB_ST01', 'SDCW2_KN_462GA1_AT01', 'SDCW2_KN_Kiln Feed Act', 'SDCW2_Kiln_Coal_Ratio', 'SDCW2_KN_L2_TOTAL_COAL_TPH','SDCW2_KN_442FN1_VFD_ST01']   
@@ -480,7 +480,7 @@ def calculate_coating_risk_quality(quality_tags):
 
         return pd.Series({'score': total_std_score, 'std_quality': std_dict})
 
-    df_quality = get_data(quality_tags, num_of_weeks=75)
+    df_quality = get_data(quality_tags, num_of_weeks=52)
 
     if df_quality is not None and not df_quality.empty:
         df_quality['time'] = pd.to_datetime(df_quality['time']/1000, unit="s")
@@ -1222,6 +1222,11 @@ def Kiln_Coating_Risk():
             df_quality.set_index('time', inplace=True)
             df_quality['final_coating_score_quality_smoothed'] = df_quality['final_coating_score_quality_smoothed'].rolling(window='1D', min_periods=0).mean().ffill()
             df_quality.reset_index(inplace=True)
+            last_row = df_quality.iloc[-1]
+            time = last_row['time']
+            risk_score = last_row['final_coating_score_quality_smoothed']
+            print(risk_score,time, 'posting risk score')
+            postData(coating_risk_tag,time,round(risk_score,2))
         else:
             df_quality = pd.DataFrame(columns=['time','final_coating_score_quality_smoothed'])
         #return df_quality
